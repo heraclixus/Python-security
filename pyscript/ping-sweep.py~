@@ -28,8 +28,8 @@ if __name__ == '__main__':
     for p in pool:
         p.start()
 
-    for i in range(1,100):
-        jobs.put('172.31.112.{0}'.format(i))
+    for i in range(1,255):
+        jobs.put('192.168.1.{0}'.format(i))
 
     for p in pool:
         jobs.put(None)
