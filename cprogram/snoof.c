@@ -1,10 +1,14 @@
 // snoof.c
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <netinet/ip.h>
+#include <net/ethernet.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <pcap.h>
+
+#define ETHER_ADDR_LEN 6
 
 //TCP flags
 #define TH_FIN 0x01
@@ -36,13 +40,13 @@ struct icmpheader
 
 struct ipheader
 {
-      unsigned char ip_ihl:4, //  4 bits, IP header length
-                    ip_ver:4; //  4 bits, IP version
+      unsigned char ip_ihl:4; //  4 bits, IP header length
+      unsigned char ip_ver:4; //  4 bits, IP version
       unsigned char iph_tos;  //  8 bits, Type of service
       unsigned short int iph_len; // 16 bits, IP packet length
       unsigned short int iph_ident; // 16 bits, identification
-      unsigned short int iph_flag:3,  // fragmentation flags
-                         iph_offset:13; //flag offset
+      unsigned short int iph_flag:3;  // fragmentation flags
+      unsigned short int iph_offset:13; //flag offset
       unsigned char iph_ttl;   // 8 bits, time to live
       unsigned char iph_protocol; //protocol type
       unsigned short int iph_chksum;
@@ -79,8 +83,8 @@ void send_raw_ip_packet(struct ipheader* ip)
     struct sockaddr_in dest_info;
     int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
     dest_info.sin_family = AF_INET;
-    dest_info.sin_addr = ip->ip_destip;
-    sendto(sock, ip, ntohs(ip->lph_len), 0, (struct sockaddr *) &dest_info, sizeof(dest_info));
+    dest_info.sin_addr = ip->iph_destip;
+    sendto(sock, ip, ntohs(ip->iph_len), 0, (struct sockaddr *) &dest_info, sizeof(dest_info));
     close(sock);
 }
 
@@ -167,18 +171,18 @@ void spoof_reply_icmp(struct ipheader* ip)
   struct icmpheader *icmp = (struct icmpheader *) (buffer + sizeof(struct ipheader));
   icmp->icmp_type = 8;    // 8 is request
   icmp->icmp_chksum = 0;
-  icmp->icmp_chksum = in_cksum((unsigned short *) icmp, sizeof(struct icmpheader));
+  icmp->icmp_chksum = 0;  // need more work on checksum 
 
   //step 2: fill in the IP header
   // use the same ipheader struct as before
   struct ipheader *newip = (struct ipheader *) buffer;
-  newip->iph_ver = ip->iph_ver;
-  newip->iph_ihl = ip->iph_ihl;
+  newip->ip_ver = ip->ip_ver;
+  newip->ip_ihl = ip->ip_ihl;
   newip->iph_ttl = 20;
   newip->iph_sourceip.s_addr = ip->iph_destip.s_addr;
   newip->iph_destip.s_addr = ip->iph_sourceip.s_addr;
   ip->iph_protocol = IPPROTO_ICMP;
-  ip->iph_len = htons(sizeof(struct ipheader) + sizeof(struct icmpheader)); 
+  ip->iph_len = htons(sizeof(struct ipheader) + sizeof(struct icmpheader));
 
   //step3: send spoofed packet
   send_raw_ip_packet(ip);
@@ -189,7 +193,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 {
   struct ethheader *eth = (struct ethheader *) packet;
   if (ntohs(eth->ether_type) == 0x0800) {
-    struct ipheader *ip = (struct ipheader *) (packet + sizeof(struct etherheader));
+    struct ipheader *ip = (struct ipheader *) (packet + sizeof(struct ethheader));
     printf("From: %s\n", inet_ntoa(ip->iph_sourceip));
     printf("To: %s\n", inet_ntoa(ip->iph_destip));
 
